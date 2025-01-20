@@ -3,6 +3,10 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"log"
+	"net/http"
+	"strings"
+
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/auth"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/config"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/models"
@@ -11,16 +15,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"net/http"
-	"strings"
 )
 
 type UserCtxKey struct {
 }
 
 func (mw *MiddlewareManager) AuthJWTMiddleware(authUC auth.UseCase, cfg *config.Config) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
+    return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			log.Println("reached")
 			bearerHeader := c.Request().Header.Get("Authorization")
 
 			mw.logger.Infof("auth middleware bearerHeader %s", bearerHeader)
@@ -92,6 +95,8 @@ func (mw *MiddlewareManager) validateJWTToken(tokenString string, authUC auth.Us
 		if err != nil {
 			return err
 		}
+
+		log.Println(u)
 
 		c.Set("user", u)
 

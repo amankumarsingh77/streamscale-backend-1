@@ -1,30 +1,66 @@
 package utils
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/config"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/models"
-	"github.com/dgrijalva/jwt-go"
-	"time"
+	"github.com/golang-jwt/jwt/v4"
+)
+
+type ContextKey string
+
+const (
+	TokenExpireDuration = time.Hour * 24
 )
 
 type Claims struct {
-	Email string `json:"email"`
-	ID    string `json:"id"`
-	jwt.StandardClaims
+	UserID   string      `json:"user_id"`
+	Email    string      `json:"email"`
+	Username string      `json:"username"`
+	Role     models.Role `json:"role"`
+	jwt.RegisteredClaims
 }
 
 func GenerateJWTToken(user *models.User, config *config.Config) (string, error) {
 	claims := &Claims{
-		Email: user.Email,
-		ID:    user.UserID.String(),
-		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: time.Now().Add(time.Minute * 60).Unix(),
+		UserID:   user.UserID.String(),
+		Email:    user.Email,
+		Username: user.Username,
+		Role:     user.Role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(TokenExpireDuration)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
 		},
 	}
+
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString([]byte(config.Server.JwtSecretKey))
+	signedToken, err := token.SignedString([]byte(config.Server.JwtSecretKey))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to sign token: %w", err)
 	}
-	return tokenString, nil
+
+	return signedToken, nil
+}
+
+func ValidateToken(tokenString string, secretKey string) (*Claims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(secretKey), nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse token: %w", err)
+	}
+
+	claims, ok := token.Claims.(*Claims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("invalid token claims")
+	}
+
+	return claims, nil
 }
