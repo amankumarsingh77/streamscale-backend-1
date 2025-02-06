@@ -15,9 +15,10 @@ type awsRepository struct {
 	preSignClient *s3.PresignClient
 }
 
-func NewAwsRepository(awsClient *s3.Client) videofiles.AWSRepository {
+func NewAwsRepository(awsClient *s3.Client, preSignClient *s3.PresignClient) videofiles.AWSRepository {
 	return &awsRepository{
-		client: awsClient,
+		preSignClient: preSignClient,
+		client:        awsClient,
 	}
 }
 

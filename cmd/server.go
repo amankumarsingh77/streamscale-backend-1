@@ -38,12 +38,12 @@ func main() {
 	}
 	appLogger.Infof("redis connected")
 
-	s3Client, err := aws.NewAWSClient(cfg.S3.Endpoint, cfg.S3.Region, cfg.S3.AccessKey, cfg.S3.SecretKey)
+	s3Client, presignClient, err := aws.NewAWSClient(cfg.S3.Endpoint, cfg.S3.Region, cfg.S3.AccessKey, cfg.S3.SecretKey)
 	if err != nil {
 		appLogger.Infof("could not connect to s3: %s", err)
 	}
 	defer redisClient.Close()
-	s := server.NewServer(cfg, psqlDB, redisClient, s3Client, appLogger)
+	s := server.NewServer(cfg, psqlDB, redisClient, s3Client, presignClient, appLogger)
 	if err = s.Run(); err != nil {
 		appLogger.Infof("could not start server: %s", err)
 	}

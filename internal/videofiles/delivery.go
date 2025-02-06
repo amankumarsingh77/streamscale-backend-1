@@ -3,6 +3,7 @@ package videofiles
 import "github.com/labstack/echo/v4"
 
 type Handler interface {
+	GetPresignUpload() echo.HandlerFunc
 	UploadVideo() echo.HandlerFunc
 	ListVideos() echo.HandlerFunc
 	GetVideoByID() echo.HandlerFunc
@@ -10,5 +11,6 @@ type Handler interface {
 	GetPlaybackInfo() echo.HandlerFunc
 	SearchVideos() echo.HandlerFunc
 	UpdateVideo() echo.HandlerFunc
+
 	//GetVideoThumbnail() echo.HandlerFunc  // Coming soon ;)
 }

@@ -2,7 +2,9 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/amankumarsingh77/cloud-video-encoder/pkg/httpErrors"
 	"log"
 	"net/http"
 	"strings"
@@ -20,8 +22,60 @@ import (
 type UserCtxKey struct {
 }
 
+func (mw *MiddlewareManager) AuthSessionMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		cookie, err := c.Cookie(mw.cfg.Session.Name)
+		if err != nil {
+			if errors.Is(err, http.ErrNoCookie) {
+				return c.JSON(http.StatusUnauthorized, httpErrors.NewUnauthorizedError(err))
+			}
+			return c.JSON(http.StatusUnauthorized, httpErrors.NewUnauthorizedError(httpErrors.Unauthorized))
+		}
+
+		if cookie.Value == "" {
+			return c.JSON(http.StatusUnauthorized, httpErrors.NewUnauthorizedError(httpErrors.Unauthorized))
+		}
+		sess, err := mw.sessUC.GetSessionByID(context.Background(), cookie.Value)
+		if err != nil {
+			log.Println("reached")
+			mw.logger.Errorf("GetSessionByID RequestID: %s, CookieValue: %s, Error: %s",
+				utils.GetRequestID(c),
+				cookie.Value,
+				err.Error(),
+			)
+			return c.JSON(http.StatusUnauthorized, httpErrors.NewUnauthorizedError(httpErrors.Unauthorized))
+		}
+
+		if sess == nil {
+			return c.JSON(http.StatusUnauthorized, httpErrors.NewUnauthorizedError(httpErrors.Unauthorized))
+		}
+
+		user, err := mw.authUC.GetByID(context.Background(), sess.UserID)
+		if err != nil {
+			mw.logger.Errorf("GetByID RequestID: %s, Error: %s",
+				utils.GetRequestID(c),
+				err.Error(),
+			)
+			return c.JSON(http.StatusUnauthorized, httpErrors.NewUnauthorizedError(httpErrors.Unauthorized))
+		}
+
+		if user == nil {
+			return c.JSON(http.StatusUnauthorized, httpErrors.NewUnauthorizedError(httpErrors.Unauthorized))
+		}
+
+		c.Set("sid", cookie.Value)
+		c.Set("uid", sess.SessionID)
+		c.Set("user", user)
+
+		ctx := context.WithValue(c.Request().Context(), utils.UserCtxKey{}, user)
+		c.SetRequest(c.Request().WithContext(ctx))
+
+		return next(c)
+	}
+}
+
 func (mw *MiddlewareManager) AuthJWTMiddleware(authUC auth.UseCase, cfg *config.Config) echo.MiddlewareFunc {
-    return func(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			log.Println("reached")
 			bearerHeader := c.Request().Header.Get("Authorization")

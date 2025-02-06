@@ -67,7 +67,35 @@ func (v *videoFileUC) GetPresignUrl(ctx context.Context, input *models.UploadInp
 	return url, nil
 }
 
-func (v *videoFileUC) UploadVideo(ctx context.Context, input *models.VideoUploadInput) (*models.VideoFile, error) {
+func (v *videoFileUC) CreateVideo(ctx context.Context, input *models.VideoUploadInput) (*models.VideoFile, error) {
+	user, err := utils.GetUserFromCtx(ctx)
+	if err != nil {
+		v.logger.Errorf("GetUserFromCtx: %v", err)
+		return nil, err
+	}
+	if err = utils.ValidateStruct(ctx, input); err != nil {
+		v.logger.Errorf("UploadVideo - ValidateStruct error: %v", err)
+		return nil, fmt.Errorf("invalid input: %v", err)
+	}
+	videoFile := &models.VideoFile{
+		UserID:   user.UserID,
+		FileName: input.FileName,
+		FileSize: input.FileSize,
+		Duration: 0,
+		S3Key:    fmt.Sprintf("uploads/%s/%s", user.UserID, input.FileName),
+		Status:   models.JobStatusQueued,
+		S3Bucket: v.cfg.S3.InputBucket,
+		Format:   input.Format,
+	}
+	videoFile, err = v.videoRepo.CreateVideo(ctx, videoFile)
+	if err != nil {
+		v.logger.Errorf("UploadVideo - CreateVideo error: %v", err)
+		return nil, err
+	}
+	return videoFile, nil
+}
+
+func (v *videoFileUC) CreateJob(ctx context.Context, input *models.VideoUploadInput) (*models.EncodeJob, error) {
 	user, err := utils.GetUserFromCtx(ctx)
 	if err != nil {
 		v.logger.Errorf("GetUserFromCtx: %v", err)
@@ -134,7 +162,7 @@ func (v *videoFileUC) UploadVideo(ctx context.Context, input *models.VideoUpload
 		v.logger.Errorf("UploadVideo - EnqueueJob error: %v", err)
 		return nil, fmt.Errorf("failed to queue the job :%v", err)
 	}
-	return videoFile, nil
+	return job, nil
 }
 
 func (v *videoFileUC) GetVideo(ctx context.Context, videoID uuid.UUID) (*models.VideoFile, error) {

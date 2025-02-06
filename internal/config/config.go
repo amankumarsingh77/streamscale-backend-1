@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"github.com/spf13/viper"
+	"log"
 )
 
 type Config struct {
@@ -10,7 +11,10 @@ type Config struct {
 	Postgres DBConfig
 	Redis    RedisConfig
 	S3       S3Config
+	Session  Session
+	Cookie   Cookie
 	Logger   Logger
+	Worker   WorkerConfig
 }
 
 type ServerConfig struct {
@@ -20,6 +24,16 @@ type ServerConfig struct {
 	JwtSecretKey string
 }
 
+type WorkerConfig struct {
+	WorkerCount int
+}
+
+type Session struct {
+	Prefix string
+	Name   string
+	Expire int
+}
+
 type DBConfig struct {
 	Host     string
 	Port     int
@@ -27,6 +41,13 @@ type DBConfig struct {
 	Password string
 	Name     string
 	PgDriver string
+}
+
+type Cookie struct {
+	Name     string
+	MaxAge   int
+	Secure   bool
+	HTTPOnly bool
 }
 
 type RedisConfig struct {
@@ -77,5 +98,6 @@ func ParseConfig(v *viper.Viper) (*Config, error) {
 	if err := v.Unmarshal(&c); err != nil {
 		return nil, err
 	}
+	log.Println(c.S3)
 	return &c, nil
 }

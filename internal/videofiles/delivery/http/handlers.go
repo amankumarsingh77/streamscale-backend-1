@@ -19,13 +19,27 @@ func NewVideoHandler(videoUC videofiles.UseCase) videofiles.Handler {
 	}
 }
 
+func (h *videoHandler) GetPresignUpload() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		input := &models.UploadInput{}
+		if err := c.Bind(input); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request payload"})
+		}
+		presignUrl, err := h.videoUC.GetPresignUrl(c.Request().Context(), input)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusOK, presignUrl)
+	}
+}
+
 func (h *videoHandler) UploadVideo() echo.HandlerFunc {
 	return func(c echo.Context) error {
 		input := &models.VideoUploadInput{}
 		if err := c.Bind(input); err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request payload"})
 		}
-		presignUrl, err := h.videoUC.UploadVideo(c.Request().Context(), input)
+		presignUrl, err := h.videoUC.CreateVideo(c.Request().Context(), input)
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 		}

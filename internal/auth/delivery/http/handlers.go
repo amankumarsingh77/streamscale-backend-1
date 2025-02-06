@@ -1,6 +1,8 @@
 package http
 
 import (
+	"github.com/amankumarsingh77/cloud-video-encoder/internal/session"
+	"github.com/amankumarsingh77/cloud-video-encoder/pkg/httpErrors"
 	"net/http"
 	"time"
 
@@ -16,13 +18,15 @@ import (
 type authHandler struct {
 	cfg    *config.Config
 	authUc auth.UseCase
+	sessUC session.UCSession
 	logger logger.Logger
 }
 
-func NewAuthHandler(cfg *config.Config, authUc auth.UseCase, logger logger.Logger) auth.Handler {
+func NewAuthHandler(cfg *config.Config, authUc auth.UseCase, sessUC session.UCSession, logger logger.Logger) auth.Handler {
 	return &authHandler{
 		cfg:    cfg,
 		authUc: authUc,
+		sessUC: sessUC,
 		logger: logger,
 	}
 }
@@ -34,57 +38,65 @@ func (h *authHandler) Register() echo.HandlerFunc {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request payload"})
 		}
 
-		createUser, err := h.authUc.Register(c.Request().Context(), user)
+		createdUser, err := h.authUc.Register(c.Request().Context(), user)
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 		}
-		return c.JSON(http.StatusCreated, createUser)
+		sess, err := h.sessUC.CreateSession(c.Request().Context(), &models.Session{
+			UserID: createdUser.User.UserID,
+		}, h.cfg.Session.Expire)
+		if err != nil {
+			return c.JSON(httpErrors.ErrorResponse(err))
+		}
+
+		c.SetCookie(utils.CreateSessionCookie(h.cfg, sess))
+		return c.JSON(http.StatusCreated, createdUser)
 	}
 }
 
 func (h *authHandler) Login() echo.HandlerFunc {
-    return func(c echo.Context) error {
-        var loginInput struct {
-            Email    string `json:"email" validate:"required,email"`
-            Password string `json:"password" validate:"required"`
-        }
-        
-        if err := c.Bind(&loginInput); err != nil {
-            return c.JSON(http.StatusBadRequest, map[string]string{
-                "error": "invalid request payload",
-            })
-        }
-        
-        if err := utils.ValidateStruct(c.Request().Context(), &loginInput); err != nil {
-            return c.JSON(http.StatusBadRequest, map[string]string{
-                "error": err.Error(),
-            })
-        }
-        
-        user := &models.User{
-            Email:    loginInput.Email,
-            Password: loginInput.Password,
-        }
-        
-        userWithToken, err := h.authUc.Login(c.Request().Context(), user)
-        if err != nil {
-            return c.JSON(http.StatusUnauthorized, map[string]string{
-                "error": err.Error(),
-            })
-        }
-        
-        // Set cookie for web clients
-        cookie := new(http.Cookie)
-        cookie.Name = "jwt-token"
-        cookie.Value = userWithToken.Token
-        cookie.Expires = time.Now().Add(utils.TokenExpireDuration)
-        cookie.HttpOnly = true
-        cookie.Secure = true // Enable in production
-        cookie.SameSite = http.SameSiteStrictMode
-        c.SetCookie(cookie)
-        
-        return c.JSON(http.StatusOK, userWithToken)
-    }
+	return func(c echo.Context) error {
+		var loginInput struct {
+			Email    string `json:"email" validate:"required,email"`
+			Password string `json:"password" validate:"required"`
+		}
+
+		if err := c.Bind(&loginInput); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": "invalid request payload",
+			})
+		}
+
+		if err := utils.ValidateStruct(c.Request().Context(), &loginInput); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": err.Error(),
+			})
+		}
+
+		user := &models.User{
+			Email:    loginInput.Email,
+			Password: loginInput.Password,
+		}
+
+		userWithToken, err := h.authUc.Login(c.Request().Context(), user)
+		if err != nil {
+			return c.JSON(http.StatusUnauthorized, map[string]string{
+				"error": err.Error(),
+			})
+		}
+
+		// Set cookie for web clients
+		sess, err := h.sessUC.CreateSession(c.Request().Context(), &models.Session{
+			UserID: userWithToken.User.UserID,
+		}, h.cfg.Session.Expire)
+		if err != nil {
+			return c.JSON(httpErrors.ErrorResponse(err))
+		}
+
+		c.SetCookie(utils.CreateSessionCookie(h.cfg, sess))
+
+		return c.JSON(http.StatusOK, userWithToken)
+	}
 }
 
 func (h *authHandler) GetMe() echo.HandlerFunc {
@@ -105,20 +117,20 @@ func (h *authHandler) ResetPassword() echo.HandlerFunc {
 }
 
 func (h *authHandler) Logout() echo.HandlerFunc {
-    return func(c echo.Context) error {
-        cookie := new(http.Cookie)
-        cookie.Name = "jwt-token"
-        cookie.Value = ""
-        cookie.Expires = time.Now().Add(-time.Hour) 
-        cookie.HttpOnly = true
-        cookie.Secure = true
-        cookie.SameSite = http.SameSiteStrictMode
-        c.SetCookie(cookie)
-        
-        return c.JSON(http.StatusOK, map[string]string{
-            "message": "successfully logged out",
-        })
-    }
+	return func(c echo.Context) error {
+		cookie := new(http.Cookie)
+		cookie.Name = "jwt-token"
+		cookie.Value = ""
+		cookie.Expires = time.Now().Add(-time.Hour)
+		cookie.HttpOnly = true
+		cookie.Secure = true
+		cookie.SameSite = http.SameSiteStrictMode
+		c.SetCookie(cookie)
+
+		return c.JSON(http.StatusOK, map[string]string{
+			"message": "successfully logged out",
+		})
+	}
 }
 
 func (h *authHandler) Update() echo.HandlerFunc {

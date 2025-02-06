@@ -21,22 +21,24 @@ const (
 )
 
 type Server struct {
-	echo        *echo.Echo
-	cfg         *config.Config
-	db          *sqlx.DB
-	redisClient *redis.Client
-	s3Client    *s3.Client
-	logger      logger.Logger
+	echo          *echo.Echo
+	cfg           *config.Config
+	db            *sqlx.DB
+	redisClient   *redis.Client
+	s3Client      *s3.Client
+	preSignClient *s3.PresignClient
+	logger        logger.Logger
 }
 
-func NewServer(cfg *config.Config, db *sqlx.DB, redisClient *redis.Client, s3Client *s3.Client, logger logger.Logger) *Server {
+func NewServer(cfg *config.Config, db *sqlx.DB, redisClient *redis.Client, s3Client *s3.Client, preSignClient *s3.PresignClient, logger logger.Logger) *Server {
 	return &Server{
-		echo:        echo.New(),
-		cfg:         cfg,
-		db:          db,
-		redisClient: redisClient,
-		s3Client:    s3Client,
-		logger:      logger,
+		echo:          echo.New(),
+		cfg:           cfg,
+		db:            db,
+		redisClient:   redisClient,
+		s3Client:      s3Client,
+		preSignClient: preSignClient,
+		logger:        logger,
 	}
 }
 
