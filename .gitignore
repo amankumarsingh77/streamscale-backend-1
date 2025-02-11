@@ -19,6 +19,7 @@ go.sum
 # Go build artifacts
 bin/
 build/
+temp/
 
 # IDE specific files
 .idea/

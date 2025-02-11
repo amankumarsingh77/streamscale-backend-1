@@ -24,6 +24,41 @@ func (v *videoRedisRepo) EnqueueJob(ctx context.Context, key string, videoJob *m
 	return v.redisClient.LPush(ctx, key, videoJob).Err()
 }
 
+func (v *videoRedisRepo) PeekJob(ctx context.Context, key string) (*models.EncodeJob, error) {
+	res, err := v.redisClient.LIndex(ctx, key, -1).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get job from queue: %w", err)
+	}
+
+	job := &models.EncodeJob{}
+	if err = json.Unmarshal([]byte(res), job); err != nil {
+		return nil, fmt.Errorf("error unmarshalling job: %w", err)
+	}
+
+	lockKey := "lock:" + job.JobID
+	locked, err := v.redisClient.SetNX(ctx, lockKey, 1, 10*time.Minute).Result()
+	if err != nil {
+		return nil, fmt.Errorf("failed to set lock: %w", err)
+	}
+	if !locked {
+		return nil, fmt.Errorf("job %s is already being processed", job.JobID)
+	}
+
+	job.StartedAt = time.Now()
+	job.Status = models.JobStatusProcessing
+	updatedJobData, err := json.Marshal(job)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal updated job: %w", err)
+	}
+
+	// Update job data in Redis
+	if err := v.redisClient.LSet(ctx, key, -1, string(updatedJobData)).Err(); err != nil {
+		return nil, fmt.Errorf("failed to update job in queue: %w", err)
+	}
+
+	return job, nil
+}
+
 func (v *videoRedisRepo) DequeueJob(ctx context.Context, key string) (*models.EncodeJob, error) {
 	res, err := v.redisClient.BLPop(ctx, 0*time.Second, key).Result()
 	if err != nil {

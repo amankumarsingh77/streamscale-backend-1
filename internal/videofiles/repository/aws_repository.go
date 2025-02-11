@@ -6,6 +6,7 @@ import (
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/models"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/videofiles"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"log"
 	"regexp"
 	"time"
 )
@@ -66,6 +67,23 @@ func (a *awsRepository) GetPresignedURL(ctx context.Context, input *models.Uploa
 //	return res, nil
 //}
 
+func (a *awsRepository) ListObjects(ctx context.Context, bucket string) ([]string, error) {
+	res, err := a.client.ListObjectsV2(
+		ctx,
+		&s3.ListObjectsV2Input{
+			Bucket: &bucket,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list objects : %w", err)
+	}
+	var keys []string
+	for _, obj := range res.Contents {
+		keys = append(keys, *obj.Key)
+	}
+	return keys, nil
+}
+
 func (a *awsRepository) GetObject(ctx context.Context, bucket, fileKey string) (*s3.GetObjectOutput, error) {
 	res, err := a.client.GetObject(
 		ctx,
@@ -74,6 +92,7 @@ func (a *awsRepository) GetObject(ctx context.Context, bucket, fileKey string) (
 			Key:    &fileKey,
 		},
 	)
+	log.Println(bucket, fileKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download file : %w", err)
 	}

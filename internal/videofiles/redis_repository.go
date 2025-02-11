@@ -7,6 +7,7 @@ import (
 
 type RedisRepository interface {
 	EnqueueJob(ctx context.Context, key string, videoJob *models.EncodeJob) error
+	PeekJob(ctx context.Context, key string) (*models.EncodeJob, error)
 
 	DequeueJob(ctx context.Context, key string) (*models.EncodeJob, error)
 	GetJobStatus(ctx context.Context, key string, jobID string) (models.JobStatus, error)

@@ -26,6 +26,7 @@ type ServerConfig struct {
 
 type WorkerConfig struct {
 	WorkerCount int
+	MaxCPUUsage float64
 }
 
 type Session struct {
