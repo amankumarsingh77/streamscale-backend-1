@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/config"
-	"github.com/amankumarsingh77/cloud-video-encoder/internal/videofiles"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/videofiles/repository"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/worker"
 	"github.com/amankumarsingh77/cloud-video-encoder/pkg/db/aws"
 	"github.com/amankumarsingh77/cloud-video-encoder/pkg/db/postgres"
 	clientRedis "github.com/amankumarsingh77/cloud-video-encoder/pkg/db/redis"
 	"github.com/amankumarsingh77/cloud-video-encoder/pkg/logger"
+	"github.com/amankumarsingh77/cloud-video-encoder/pkg/utils"
 	"log"
 	"os"
 	"os/signal"
@@ -25,93 +25,105 @@ const (
 )
 
 func main() {
+	// Load configuration
 	configFile := "config.yml"
 	cfgFile, err := config.LoadConfig(configFile)
-
 	if err != nil {
-		log.Fatalf("loadConfig: %v", err)
+		log.Fatalf("Failed to load config: %v", err)
 	}
+
 	cfg, err := config.ParseConfig(cfgFile)
 	if err != nil {
-		log.Fatalf("parseConfig: %v", err)
+		log.Fatalf("Failed to parse config: %v", err)
 	}
+
+	// Initialize logger
 	appLogger := logger.NewApiLogger(cfg)
 	appLogger.InitLogger()
-	appLogger.Infof("AppVersion: %s, LogLevel: %s, Mode: %s", cfg.Server.AppVersion, cfg.Logger.Level, cfg.Server.Mode)
+	appLogger.Infof("Starting worker service - Version: %s, LogLevel: %s, Mode: %s",
+		cfg.Server.AppVersion, cfg.Logger.Level, cfg.Server.Mode)
+
+	// Initialize PostgreSQL
 	psqlDB, err := postgres.NewPsqlDB(cfg)
 	if err != nil {
-		appLogger.Infof("could not connect to db: %s", err)
+		appLogger.Fatalf("PostgreSQL init error: %s", err)
 	}
-	appLogger.Infof("db connected, status: %#v", psqlDB.Stats())
 	defer psqlDB.Close()
+	appLogger.Info("PostgreSQL connected successfully")
 
+	// Initialize Redis
 	redisClient, err := clientRedis.NewRedisClient(cfg)
 	if err != nil {
-		appLogger.Infof("could not connect to redis: %s", err)
+		appLogger.Fatalf("Redis init error: %s", err)
 	}
-	appLogger.Infof("redis connected")
+	appLogger.Info("Redis connected successfully")
 
-	awsClient, presignClient, err := aws.NewAWSClient(cfg.S3.Endpoint, cfg.S3.Region, cfg.S3.AccessKey, cfg.S3.SecretKey)
+	// Initialize AWS clients
+	awsClient, presignClient, err := aws.NewAWSClient(
+		cfg.S3.Endpoint,
+		cfg.S3.Region,
+		cfg.S3.AccessKey,
+		cfg.S3.SecretKey,
+	)
 	if err != nil {
-		appLogger.Infof("could not connect to s3: %s", err)
-		return
+		appLogger.Fatalf("AWS init error: %s", err)
 	}
+	appLogger.Info("AWS client initialized successfully")
 
+	// Initialize repositories
 	awsRepo := repository.NewAwsRepository(awsClient, presignClient)
+	redisRepo := repository.NewVideoRedisRepo(redisClient)
+
+	// Create context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	videoRedisClient := repository.NewVideoRedisRepo(redisClient)
 
+	// Initialize and start worker pool
+	videoWorker := worker.NewWorker(cfg, appLogger, redisRepo, awsRepo)
+	if err := videoWorker.Start(ctx); err != nil {
+		appLogger.Fatalf("Failed to start worker: %s", err)
+	}
+
+	// Set up signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	go func() {
-		<-sigChan
-		log.Println("Shutting down...")
-		cancel()
-	}()
+	// Start health check routine
+	go runHealthCheck(ctx, appLogger, cfg)
+
+	// Wait for shutdown signal
+	sig := <-sigChan
+	appLogger.Infof("Received shutdown signal: %v", sig)
+
+	// Initialize graceful shutdown
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+
+	// Stop the worker
+	videoWorker.Stop()
+
+	// Wait for shutdown context
+	<-shutdownCtx.Done()
+	appLogger.Info("Worker service stopped successfully")
+}
+
+func runHealthCheck(ctx context.Context, logger logger.Logger, cfg *config.Config) {
+	ticker := time.NewTicker(checkInterval)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		default:
-			if shouldProcess, usage := checkCPU(); shouldProcess {
-				processJob(ctx, videoRedisClient, cfg.S3.InputBucket, awsRepo)
-			} else {
-				log.Printf("CPU usage %.2f%% too high, waiting...", usage)
-				time.Sleep(checkInterval)
+		case <-ticker.C:
+			_, cpuUsage := utils.CheckCPUUsage(cfg.Worker.MaxCPUUsage)
+
+			if cpuUsage > maxCPUUsage {
+				logger.Warnf("High CPU usage detected: %.2f%%", cpuUsage)
 			}
+
+			// Add additional health checks here (Redis, Postgres, etc.)
+			logger.Infof("Health check - CPU Usage: %.2f%%", cpuUsage)
 		}
-	}
-}
-
-func checkCPU() (bool, float64) {
-	usage, err := worker.GetCPUUsage()
-	if err != nil {
-		log.Printf("CPU check error: %v", err)
-		return false, 0
-	}
-	return usage <= maxCPUUsage, usage
-}
-
-func processJob(ctx context.Context, client videofiles.RedisRepository, bucket string, awsRepo videofiles.AWSRepository) {
-	job, err := client.PeekJob(ctx, "video_jobs")
-	if err != nil {
-		log.Printf("Failed to fetch job: %v", err)
-		return
-	}
-
-	//tempDir, err := os.MkdirTemp("", "video_job_")
-	//if err != nil {
-	//	log.Printf("Failed to create temp dir: %v", err)
-	//	return
-	//}
-
-	log.Printf("Processing job %s", job.VideoID)
-	if err := worker.Process(ctx, job.InputS3Key, job.OutputS3Key, "temp", bucket, awsRepo); err != nil {
-		log.Printf("Job %s failed: %v", job.VideoID, err)
-	} else {
-		log.Printf("Job %s completed successfully", job.VideoID)
 	}
 }

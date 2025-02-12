@@ -46,26 +46,28 @@ func (a *awsRepository) GetPresignedURL(ctx context.Context, input *models.Uploa
 }
 
 // This thing is useless as not more than 10 users can upload videos at once. But just letting it be here.
-//func (a *awsRepository) PutObject(ctx context.Context, input models.UploadInput) (*s3.PutObjectOutput, error) {
-//	pattern := `^.+\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|mpeg|mpg|3gp|ogv|vob|ts|mxf)$`
-//	re := regexp.MustCompile(pattern)
-//	if !re.MatchString(input.Name) {
-//		return nil, fmt.Errorf("invalid file format: %s", input.Name)
-//	}
-//	res, err := a.client.PutObject(
-//		ctx,
-//		&s3.PutObjectInput{
-//			InputBucket:        &input.BucketName,
-//			Key:           &input.Name,
-//			ContentType:   &input.MimeType,
-//			ContentLength: &input.Size,
-//		},
-//	)
-//	if err != nil {
-//		return nil, fmt.Errorf("failed to upload file : %w", err)
-//	}
-//	return res, nil
-//}
+func (a *awsRepository) PutObject(ctx context.Context, input models.UploadInput) (*s3.PutObjectOutput, error) {
+	//pattern := `^.+\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|mpeg|mpg|3gp|ogv|vob|ts|mxf|)$`
+	//re := regexp.MustCompile(pattern)
+	//if !re.MatchString(input.Name) {
+	//	return nil, fmt.Errorf("invalid file format: %s", input.Name)
+	//}
+	log.Println(input)
+	res, err := a.client.PutObject(
+		ctx,
+		&s3.PutObjectInput{
+			Bucket:        &input.BucketName,
+			Key:           &input.Key,
+			ContentType:   &input.MimeType,
+			ContentLength: &input.Size,
+			Body:          input.File,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload file : %w", err)
+	}
+	return res, nil
+}
 
 func (a *awsRepository) ListObjects(ctx context.Context, bucket string) ([]string, error) {
 	res, err := a.client.ListObjectsV2(
