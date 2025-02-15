@@ -80,19 +80,16 @@ func (p *videoProcessor) ProcessVideo(ctx context.Context, inputKey, outputKey s
 }
 
 func (p *videoProcessor) uploadProcessedFiles(ctx context.Context, outputPath, outputKey string) error {
-	// Adjust based on your needs
 
 	if outputPath == "" || outputKey == "" {
 		return fmt.Errorf("output path and key cannot be empty")
 	}
 
-	// Clean and normalize the output key
 	outputKey = strings.TrimPrefix(outputKey, "/")
 	baseKey := strings.TrimSuffix(outputKey, filepath.Ext(outputKey))
 
 	log.Printf("Starting concurrent upload process from %s with base key: %s", outputPath, baseKey)
 
-	// Create channels for managing uploads
 	type uploadJob struct {
 		path     string
 		relPath  string
@@ -104,7 +101,6 @@ func (p *videoProcessor) uploadProcessedFiles(ctx context.Context, outputPath, o
 	results := make(chan error)
 	var wg sync.WaitGroup
 
-	// Start worker pool
 	for i := 0; i < maxConcurrentUploads; i++ {
 		wg.Add(1)
 		go func(workerID int) {
@@ -123,7 +119,6 @@ func (p *videoProcessor) uploadProcessedFiles(ctx context.Context, outputPath, o
 		}(i)
 	}
 
-	// Queue upload jobs
 	go func() {
 		err := filepath.Walk(outputPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -167,13 +162,11 @@ func (p *videoProcessor) uploadProcessedFiles(ctx context.Context, outputPath, o
 		close(jobs)
 	}()
 
-	// Wait for workers to complete and collect errors
 	go func() {
 		wg.Wait()
 		close(results)
 	}()
 
-	// Check for errors
 	var uploadErrors []error
 	for err := range results {
 		if err != nil {

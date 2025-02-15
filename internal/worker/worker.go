@@ -4,16 +4,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
-	"time"
+	"sync"
 
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/config"
+	"github.com/amankumarsingh77/cloud-video-encoder/internal/models"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/videofiles"
 	"github.com/amankumarsingh77/cloud-video-encoder/pkg/logger"
 	"github.com/amankumarsingh77/cloud-video-encoder/pkg/utils"
 )
 
 var ErrNoJob = errors.New("no job available")
+
+type Worker struct {
+	logger    logger.Logger
+	redisRepo videofiles.RedisRepository
+	awsRepo   videofiles.AWSRepository
+	cfg       *config.Config
+	wg        sync.WaitGroup
+	stopChan  chan struct{}
+	jobs      chan *models.EncodeJob
+	semaphore chan struct{} // For limiting concurrent tasks per worker
+}
 
 func NewWorker(cfg *config.Config, logger logger.Logger, redisRepo videofiles.RedisRepository, awsRepo videofiles.AWSRepository) *Worker {
 	return &Worker{
@@ -22,14 +33,20 @@ func NewWorker(cfg *config.Config, logger logger.Logger, redisRepo videofiles.Re
 		awsRepo:   awsRepo,
 		cfg:       cfg,
 		stopChan:  make(chan struct{}),
+		jobs:      make(chan *models.EncodeJob, 100),           // Buffer size for job channel
+		semaphore: make(chan struct{}, cfg.Worker.WorkerCount), // Limit concurrent tasks
 	}
 }
 
 func (w *Worker) Start(ctx context.Context) error {
 	w.logger.Info("Starting worker pool")
-	log.Println(w.cfg.Worker.WorkerCount)
+
+	// Start the Redis subscriber in a separate goroutine
+	w.wg.Add(1)
+	go w.subscribeToJobs(ctx)
+
+	// Start worker goroutines
 	for i := 0; i < w.cfg.Worker.WorkerCount; i++ {
-		log.Println("reached")
 		w.wg.Add(1)
 		go func(id int) {
 			w.runWorker(ctx, id)
@@ -45,17 +62,39 @@ func (w *Worker) Stop() {
 	w.logger.Info("Worker pool stopped")
 }
 
+func (w *Worker) subscribeToJobs(ctx context.Context) {
+	defer w.wg.Done()
+
+	jobChan, err := w.redisRepo.SubscribeToJobs(ctx, VideoJobsQueueKey)
+	if err != nil {
+		w.logger.Errorf("Failed to subscribe to jobs: %v", err)
+		return
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-w.stopChan:
+			return
+		case job := <-jobChan:
+			if job != nil {
+				select {
+				case w.jobs <- job:
+					// Job successfully queued
+				case <-ctx.Done():
+					return
+				case <-w.stopChan:
+					return
+				}
+			}
+		}
+	}
+}
+
 func (w *Worker) runWorker(ctx context.Context, workerID int) {
-	defer func() {
-		w.logger.Infof("Worker %d shutting down", workerID)
-		w.wg.Done()
-	}()
-
-	// Log worker start
+	defer w.wg.Done()
 	w.logger.Infof("Worker %d started", workerID)
-
-	// Add jitter to prevent all workers from polling simultaneously
-	time.Sleep(time.Duration(workerID*100) * time.Millisecond)
 
 	for {
 		select {
@@ -65,37 +104,44 @@ func (w *Worker) runWorker(ctx context.Context, workerID int) {
 		case <-w.stopChan:
 			w.logger.Infof("Worker %d received stop signal", workerID)
 			return
-		default:
-			if err := w.processNextJob(ctx, workerID); err != nil {
-				if err == ErrNoJob {
-					time.Sleep(time.Second)
-					continue
+		case job := <-w.jobs:
+			// Acquire semaphore slot
+			select {
+			case w.semaphore <- struct{}{}:
+				// Process the job in a separate goroutine
+				go func() {
+					defer func() { <-w.semaphore }() // Release semaphore slot
+					if err := w.processJob(ctx, workerID, job); err != nil {
+						w.logger.Errorf("Worker %d failed to process job %s: %v", workerID, job.JobID, err)
+					}
+				}()
+			default:
+				// If we can't acquire semaphore, put job back in channel
+				select {
+				case w.jobs <- job:
+				default:
+					w.logger.Warnf("Worker %d: Failed to requeue job %s, channel full", workerID, job.JobID)
 				}
-				w.logger.Errorf("Worker %d encountered error: %v", workerID, err)
-				// Add exponential backoff for errors
-				time.Sleep(time.Second)
 			}
 		}
 	}
 }
 
-func (w *Worker) processNextJob(ctx context.Context, workerID int) error {
+func (w *Worker) processJob(ctx context.Context, workerID int, job *models.EncodeJob) error {
+	w.logger.Infof("Worker %d processing job: %s", workerID, job.VideoID)
+
+	// Check CPU usage before processing
 	canAcceptJob, usage := utils.CheckCPUUsage(w.cfg.Worker.MaxCPUUsage)
 	if !canAcceptJob {
-		w.logger.Infof("Worker %d: CPU usage too high (%.2f%%), waiting...", workerID, usage)
-		time.Sleep(5 * time.Second)
-		return nil
+		w.logger.Infof("Worker %d: CPU usage too high (%.2f%%), requeueing job", workerID, usage)
+		select {
+		case w.jobs <- job:
+			return nil
+		default:
+			return fmt.Errorf("failed to requeue job, channel full")
+		}
 	}
 
-	job, _ := w.redisRepo.PeekJob(ctx, VideoJobsQueueKey)
-	//if err != nil {
-	//	return fmt.Errorf("failed to peek job: %w", err)
-	//}
-	if job == nil {
-		return ErrNoJob
-	}
-
-	w.logger.Infof("Worker %d processing job: %s", workerID, job.VideoID)
 	processor := NewVideoProcessor(w.cfg, w.awsRepo)
 	if err := processor.ProcessVideo(ctx, job.InputS3Key, job.OutputS3Key); err != nil {
 		return fmt.Errorf("failed to process video: %w", err)

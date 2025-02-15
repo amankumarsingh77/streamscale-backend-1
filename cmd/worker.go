@@ -89,9 +89,8 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	// Start health check routine
-	go runHealthCheck(ctx, appLogger, cfg)
+	//go runHealthCheck(ctx, appLogger, cfg)
 
-	// Wait for shutdown signal
 	sig := <-sigChan
 	appLogger.Infof("Received shutdown signal: %v", sig)
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/go-redis/redis/v8"
+	"log"
 	"time"
 )
 
@@ -71,17 +72,17 @@ func main() {
 	}
 
 	ctx := context.Background()
+
 	jobJSON, err := json.Marshal(job)
 	if err != nil {
-		fmt.Println("Error marshalling job:", err)
-		return
+		log.Fatalf("Error marshalling job: %v", err)
 	}
 
-	err = rdb.LPush(ctx, "video_jobs", jobJSON).Err()
+	channel := "video_jobs"
+	err = rdb.Publish(ctx, channel, jobJSON).Err()
 	if err != nil {
-		fmt.Println("Error pushing job to Redis queue:", err)
-		return
+		log.Fatalf("Error publishing job to Redis: %v", err)
 	}
 
-	fmt.Println("Job ingested successfully into Redis queue")
+	fmt.Printf("Job published successfully to Redis channel: %s\n", channel)
 }

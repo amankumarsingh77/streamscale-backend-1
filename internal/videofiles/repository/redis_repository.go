@@ -22,7 +22,18 @@ func NewVideoRedisRepo(redisClient *redis.Client) videofiles.RedisRepository {
 }
 
 func (v *videoRedisRepo) EnqueueJob(ctx context.Context, key string, videoJob *models.EncodeJob) error {
-	return v.redisClient.LPush(ctx, key, videoJob).Err()
+	// Marshal the job to JSON
+	jobData, err := json.Marshal(videoJob)
+	if err != nil {
+		return fmt.Errorf("failed to marshal job: %w", err)
+	}
+	
+	// Publish the job to Redis pub/sub channel
+	if err := v.redisClient.Publish(ctx, key, jobData).Err(); err != nil {
+		return fmt.Errorf("failed to publish job: %w", err)
+	}
+	
+	return nil
 }
 
 func (v *videoRedisRepo) PeekJob(ctx context.Context, key string) (*models.EncodeJob, error) {
@@ -160,4 +171,66 @@ func (v *videoRedisRepo) GetJobStatus(ctx context.Context, key string, jobID str
 	}
 
 	return models.JobStatus(status), nil
+}
+
+func (v *videoRedisRepo) SubscribeToJobs(ctx context.Context, key string) (<-chan *models.EncodeJob, error) {
+	// Create buffered channel for jobs
+	jobChan := make(chan *models.EncodeJob, 100)
+	
+	// Subscribe to the Redis pub/sub channel
+	pubsub := v.redisClient.Subscribe(ctx, key)
+	
+	// Start goroutine to handle messages
+	go func() {
+		defer pubsub.Close()
+		defer close(jobChan)
+		
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				msg, err := pubsub.ReceiveMessage(ctx)
+				if err != nil {
+					log.Printf("Error receiving message: %v", err)
+					continue
+				}
+				
+				// Parse the job from the message
+				var job models.EncodeJob
+				if err := json.Unmarshal([]byte(msg.Payload), &job); err != nil {
+					log.Printf("Error unmarshaling job: %v", err)
+					continue
+				}
+				
+				// Try to acquire lock for the job
+				lockKey := fmt.Sprintf("lock:%s", job.JobID)
+				locked, err := v.redisClient.SetNX(ctx, lockKey, "1", 10*time.Minute).Result()
+				if err != nil {
+					log.Printf("Error setting lock: %v", err)
+					continue
+				}
+				
+				if !locked {
+					// Job is already being processed by another worker
+					continue
+				}
+				
+				// Update job status to processing
+				job.Status = models.JobStatusProcessing
+				job.StartedAt = time.Now()
+				
+				// Send job to worker
+				select {
+				case jobChan <- &job:
+				case <-ctx.Done():
+					// Release lock if we can't send the job
+					v.redisClient.Del(ctx, lockKey)
+					return
+				}
+			}
+		}
+	}()
+	
+	return jobChan, nil
 }
