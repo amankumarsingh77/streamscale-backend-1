@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+const (
+	NewVideoJobsQueue = "new_video_jobs"
+	JobChannel        = "new_video_jobs_channel"
+)
+
 type EncodeJob struct {
 	JobID                  string             `json:"job_id" redis:"job_id"`
 	UserID                 string             `json:"user_id" redis:"user_id"`
@@ -37,13 +42,14 @@ type PlaybackFormat struct {
 type JobStatus string
 
 const (
-	JobStatusQueued     JobStatus = "video_jobs"
+	JobStatusQueued     JobStatus = "queued"
 	JobStatusProcessing JobStatus = "in_progress"
 	JobStatusCompleted  JobStatus = "completed"
 	JobStatusFailed     JobStatus = "failed"
 )
 
 func main() {
+	// Initialize Redis client
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     "intimate-racer-53028.upstash.io:6379",
 		Password: "Ac8kAAIjcDE2N2JmODcxY2U1MzI0MWU5OTA3MGY5YjM0Y2FjMjIxN3AxMA",
@@ -53,6 +59,7 @@ func main() {
 		},
 	})
 
+	// Create a job
 	job := EncodeJob{
 		JobID:                  "12345",
 		UserID:                 "user_001",
@@ -71,17 +78,56 @@ func main() {
 	}
 
 	ctx := context.Background()
+
+	// Store job details in a hash
+	jobKey := fmt.Sprintf("job:%s", job.JobID)
 	jobJSON, err := json.Marshal(job)
 	if err != nil {
 		fmt.Println("Error marshalling job:", err)
 		return
 	}
 
-	err = rdb.LPush(ctx, "video_jobs", jobJSON).Err()
+	// Use pipeline for atomic operations
+	pipe := rdb.Pipeline()
+
+	// Push job to new_video_jobs queue
+	pipe.LPush(ctx, NewVideoJobsQueue, jobJSON)
+
+	// Store job details in a hash for easy access
+	pipe.HSet(ctx, jobKey, map[string]interface{}{
+		"job_id":        job.JobID,
+		"user_id":       job.UserID,
+		"video_id":      job.VideoID,
+		"input_key":     job.InputS3Key,
+		"output_key":    job.OutputS3Key,
+		"status":        string(job.Status),
+		"started_at":    job.StartedAt.Format(time.RFC3339),
+		"input_bucket":  job.InputBucket,
+		"output_bucket": job.OutputBucket,
+	})
+
+	// Set TTL for job details (24 hours)
+	pipe.Expire(ctx, jobKey, 24*time.Hour)
+
+	// Publish notification about new job
+	notification := map[string]interface{}{
+		"job_id":    job.JobID,
+		"video_id":  job.VideoID,
+		"timestamp": time.Now().Format(time.RFC3339),
+	}
+	notificationJSON, _ := json.Marshal(notification)
+	pipe.Publish(ctx, JobChannel, notificationJSON)
+
+	// Execute all commands
+	_, err = pipe.Exec(ctx)
 	if err != nil {
-		fmt.Println("Error pushing job to Redis queue:", err)
+		fmt.Println("Error executing Redis pipeline:", err)
 		return
 	}
 
-	fmt.Println("Job ingested successfully into Redis queue")
+	fmt.Printf("Job %s ingested successfully into Redis queue and notification published\n", job.JobID)
+
+	// Optional: Demonstrate how to subscribe to notifications
+	// Note: This is just for testing, in production the subscriber would be in a separate process
+
 }

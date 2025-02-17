@@ -16,4 +16,5 @@ func MapVideoRoutes(videoGroup *echo.Group, h videofiles.Handler, mw *middleware
 	videoGroup.DELETE("/:video_id", h.DeleteVideo())
 	videoGroup.PUT("/:video_id", h.UpdateVideo())
 	videoGroup.GET("/:video_id/playback-info", h.GetPlaybackInfo())
+	videoGroup.POST("/create-job", h.CreateJob())
 }

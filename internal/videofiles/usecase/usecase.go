@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/config"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/models"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/videofiles"
 	"github.com/amankumarsingh77/cloud-video-encoder/pkg/logger"
 	"github.com/amankumarsingh77/cloud-video-encoder/pkg/utils"
 	"github.com/google/uuid"
-	"time"
 )
 
 type videoFileUC struct {
@@ -81,7 +82,7 @@ func (v *videoFileUC) CreateVideo(ctx context.Context, input *models.VideoUpload
 		UserID:   user.UserID,
 		FileName: input.FileName,
 		FileSize: input.FileSize,
-		Duration: 0,
+		Duration: input.Duration,
 		S3Key:    fmt.Sprintf("uploads/%s/%s", user.UserID, input.FileName),
 		Status:   models.JobStatusQueued,
 		S3Bucket: v.cfg.S3.InputBucket,

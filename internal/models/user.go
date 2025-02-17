@@ -18,20 +18,21 @@ const (
 )
 
 type User struct {
-    UserID       uuid.UUID `json:"user_id" db:"user_id" redis:"user_id" validate:"omitempty"`
-    Username     string    `json:"username" db:"username" redis:"username" validate:"required,lte=30"` 
-    Email        string    `json:"email" db:"email" redis:"email" validate:"required,email,lte=60"`
-    Password     string    `json:"password,omitempty" db:"password" redis:"password" validate:"required,min=8"`
-    Fullname     string    `json:"fullname" db:"fullname" redis:"fullname" validate:"required,lte=30"`
-    APIkey       string    `json:"api_key" db:"api_key" redis:"api_key" validate:"omitempty"`
-    Role         Role      `json:"role" db:"role" redis:"role" validate:"required,oneof=admin user,lte=10"`
-    StorageQuota int64     `json:"storage_quota_db" db:"storage_quota_db" redis:"storage_quota_db"`
-    CreatedAt    time.Time `json:"created_at" db:"created_at" redis:"created_at"`
-    UpdatedAt    time.Time `json:"updated_at" db:"updated_at" redis:"updated_at"`
+	UserID       uuid.UUID `json:"user_id" db:"user_id" redis:"user_id" validate:"omitempty"`
+	Username     string    `json:"username" db:"username" redis:"username" validate:"required,lte=30"`
+	Email        string    `json:"email" db:"email" redis:"email" validate:"required,email,lte=60"`
+	Password     string    `json:"password,omitempty" db:"password" redis:"password" validate:"required,min=8"`
+	Fullname     string    `json:"fullname" db:"fullname" redis:"fullname" validate:"required,lte=30"`
+	APIkey       string    `json:"api_key" db:"api_key" redis:"api_key" validate:"omitempty"`
+	Role         Role      `json:"role" db:"role" redis:"role" validate:"required,oneof=admin user,lte=10"`
+	StorageQuota int64     `json:"storage_quota_db" db:"storage_quota_db" redis:"storage_quota_db"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at" redis:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at" db:"updated_at" redis:"updated_at"`
 }
 
 type StorageUsage struct {
 	TotalSize    int64
+	TotalUsage   int64
 	VideoCount   int
 	UsagePercent float64
 }

@@ -2,19 +2,21 @@ package config
 
 import (
 	"errors"
-	"github.com/spf13/viper"
 	"log"
+
+	"github.com/spf13/viper"
 )
 
 type Config struct {
-	Server   ServerConfig
-	Postgres DBConfig
-	Redis    RedisConfig
-	S3       S3Config
-	Session  Session
-	Cookie   Cookie
-	Logger   Logger
-	Worker   WorkerConfig
+	Server    ServerConfig
+	Postgres  DBConfig
+	Redis     RedisConfig
+	S3        S3Config
+	Session   Session
+	Cookie    Cookie
+	Logger    Logger
+	Worker    WorkerConfig
+	Container ContainerConfig
 }
 
 type ServerConfig struct {
@@ -77,6 +79,12 @@ type Logger struct {
 	DisableStacktrace bool
 	Encoding          string
 	Level             string
+}
+
+type ContainerConfig struct {
+	Image    string  `yaml:"image"`
+	CPULimit float64 `yaml:"cpu_limit"`
+	MemoryMB int     `yaml:"memory_mb"`
 }
 
 func LoadConfig(filename string) (*viper.Viper, error) {

@@ -2,6 +2,13 @@ package main
 
 import (
 	"context"
+	"log"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+	"time"
+
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/config"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/videofiles/repository"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/worker"
@@ -10,11 +17,6 @@ import (
 	clientRedis "github.com/amankumarsingh77/cloud-video-encoder/pkg/db/redis"
 	"github.com/amankumarsingh77/cloud-video-encoder/pkg/logger"
 	"github.com/amankumarsingh77/cloud-video-encoder/pkg/utils"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
 )
 
 const (
@@ -79,7 +81,10 @@ func main() {
 	defer cancel()
 
 	// Initialize and start worker pool
-	videoWorker := worker.NewWorker(cfg, appLogger, redisRepo, awsRepo)
+	videoWorker, err := worker.NewWorker(cfg, appLogger, redisRepo, awsRepo)
+	if err != nil {
+		appLogger.Fatalf("Failed to initialize worker: %s", err)
+	}
 	if err := videoWorker.Start(ctx); err != nil {
 		appLogger.Fatalf("Failed to start worker: %s", err)
 	}
@@ -88,16 +93,40 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+	// Create a WaitGroup for graceful shutdown
+	var wg sync.WaitGroup
+
 	// Start health check routine
-	go runHealthCheck(ctx, appLogger, cfg)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		runHealthCheck(ctx, appLogger, cfg)
+	}()
 
 	// Wait for shutdown signal
 	sig := <-sigChan
 	appLogger.Infof("Received shutdown signal: %v", sig)
 
+	// Cancel context to stop all goroutines
+	cancel()
+
 	// Initialize graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
+
+	// Wait for all goroutines to finish or timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		appLogger.Info("Graceful shutdown completed")
+	case <-shutdownCtx.Done():
+		appLogger.Warn("Shutdown timed out")
+	}
 
 	// Stop the worker
 	videoWorker.Stop()
@@ -114,16 +143,15 @@ func runHealthCheck(ctx context.Context, logger logger.Logger, cfg *config.Confi
 	for {
 		select {
 		case <-ctx.Done():
+			logger.Info("Health check stopped")
 			return
 		case <-ticker.C:
-			_, cpuUsage := utils.CheckCPUUsage(cfg.Worker.MaxCPUUsage)
-
-			if cpuUsage > maxCPUUsage {
+			canAccept, cpuUsage := utils.CheckCPUUsage(cfg.Worker.MaxCPUUsage)
+			if canAccept == false {
 				logger.Warnf("High CPU usage detected: %.2f%%", cpuUsage)
+			} else {
+				logger.Infof("Current CPU usage: %.2f%%", cpuUsage)
 			}
-
-			// Add additional health checks here (Redis, Postgres, etc.)
-			logger.Infof("Health check - CPU Usage: %.2f%%", cpuUsage)
 		}
 	}
 }

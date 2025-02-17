@@ -5,9 +5,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/amankumarsingh77/cloud-video-encoder/internal/config"
-	"github.com/amankumarsingh77/cloud-video-encoder/internal/models"
-	"github.com/amankumarsingh77/cloud-video-encoder/internal/videofiles"
 	"io"
 	"log"
 	"math"
@@ -19,6 +16,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/amankumarsingh77/cloud-video-encoder/internal/config"
+	"github.com/amankumarsingh77/cloud-video-encoder/internal/models"
+	"github.com/amankumarsingh77/cloud-video-encoder/internal/videofiles"
 )
 
 const (

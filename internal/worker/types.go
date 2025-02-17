@@ -7,6 +7,7 @@ import (
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/config"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/videofiles"
 	"github.com/amankumarsingh77/cloud-video-encoder/pkg/logger"
+	"github.com/containerd/containerd"
 )
 
 const (
@@ -25,9 +26,10 @@ type Worker struct {
 	redisRepo videofiles.RedisRepository
 	awsRepo   videofiles.AWSRepository
 	cfg       *config.Config
-	wg        sync.WaitGroup
 	stopChan  chan struct{}
-	isRunning bool
+	jobChan   chan struct{}
+	wg        sync.WaitGroup
+	client    *containerd.Client
 }
 
 type VideoInfo struct {

@@ -3,6 +3,7 @@ package http
 import (
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/session"
 	"github.com/amankumarsingh77/cloud-video-encoder/pkg/httpErrors"
+	"log"
 	"net/http"
 	"time"
 
@@ -101,6 +102,7 @@ func (h *authHandler) Login() echo.HandlerFunc {
 
 func (h *authHandler) GetMe() echo.HandlerFunc {
 	return func(c echo.Context) error {
+		log.Println("user", c.Get("user"))
 		user, ok := c.Get("user").(*models.User)
 		if !ok {
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized access"})

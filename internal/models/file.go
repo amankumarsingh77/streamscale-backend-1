@@ -1,8 +1,9 @@
 package models
 
 import (
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type VideoFile struct {
@@ -28,16 +29,17 @@ type FilterOptions struct {
 }
 
 type VideoList struct {
-	Videos     []*VideoFile
-	TotalCount int
-	Page       int
-	PageSize   int
-	HasMore    bool
+	Videos     []*VideoFile `json:"videos"`
+	TotalCount int          `json:"total_count"`
+	Page       int          `json:"page"`
+	PageSize   int          `json:"page_size"`
+	HasMore    bool         `json:"has_more"`
 }
 
 type VideoUploadInput struct {
 	FileName               string             `json:"filename" validate:"required,lte=255"`
 	FileSize               int64              `json:"file_size" validate:"required"`
+	Duration               int64              `json:"duration" validate:"required"`
 	Format                 string             `json:"format" validate:"required,lte=20"`
 	Qualities              []InputQualityInfo `json:"qualities" validate:"dive"`
 	OutputFormats          []PlaybackFormat   `json:"output_formats" validate:"dive"`

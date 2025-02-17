@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/amankumarsingh77/cloud-video-encoder/pkg/httpErrors"
-	"log"
 	"net/http"
 	"strings"
+
+	"github.com/amankumarsingh77/cloud-video-encoder/pkg/httpErrors"
 
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/auth"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/config"
@@ -37,7 +37,6 @@ func (mw *MiddlewareManager) AuthSessionMiddleware(next echo.HandlerFunc) echo.H
 		}
 		sess, err := mw.sessUC.GetSessionByID(context.Background(), cookie.Value)
 		if err != nil {
-			log.Println("reached")
 			mw.logger.Errorf("GetSessionByID RequestID: %s, CookieValue: %s, Error: %s",
 				utils.GetRequestID(c),
 				cookie.Value,
@@ -67,7 +66,7 @@ func (mw *MiddlewareManager) AuthSessionMiddleware(next echo.HandlerFunc) echo.H
 		c.Set("uid", sess.SessionID)
 		c.Set("user", user)
 
-		ctx := context.WithValue(c.Request().Context(), utils.UserCtxKey{}, user)
+		ctx := context.WithValue(c.Request().Context(), utils.CtxUserKey, user)
 		c.SetRequest(c.Request().WithContext(ctx))
 
 		return next(c)
@@ -77,7 +76,6 @@ func (mw *MiddlewareManager) AuthSessionMiddleware(next echo.HandlerFunc) echo.H
 func (mw *MiddlewareManager) AuthJWTMiddleware(authUC auth.UseCase, cfg *config.Config) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			log.Println("reached")
 			bearerHeader := c.Request().Header.Get("Authorization")
 
 			mw.logger.Infof("auth middleware bearerHeader %s", bearerHeader)
@@ -150,12 +148,9 @@ func (mw *MiddlewareManager) validateJWTToken(tokenString string, authUC auth.Us
 			return err
 		}
 
-		log.Println(u)
-
 		c.Set("user", u)
 
-		ctx := context.WithValue(c.Request().Context(), UserCtxKey{}, u)
-		// req := c.Request().WithContext(ctx)
+		ctx := context.WithValue(c.Request().Context(), utils.CtxUserKey, u)
 		c.SetRequest(c.Request().WithContext(ctx))
 	}
 	return nil
@@ -164,9 +159,23 @@ func (mw *MiddlewareManager) validateJWTToken(tokenString string, authUC auth.Us
 func (mw *MiddlewareManager) OwnerOrAdminMiddleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			user, ok := c.Get("user").(*models.User)
-			if !ok {
-				mw.logger.Errorf("Error c.Get(user) RequestID: %s, ERROR: %s,", utils.GetRequestID(c), "invalid user ctx")
+			// Try to get user from both Echo context and request context
+			var user *models.User
+
+			// First try Echo context
+			if u, ok := c.Get("user").(*models.User); ok {
+				user = u
+			} else {
+				// Try request context
+				if u, err := utils.GetUserFromCtx(c.Request().Context()); err == nil {
+					user = u
+				}
+			}
+
+			if user == nil {
+				mw.logger.Errorf("Error getting user from context RequestID: %s, ERROR: %s",
+					utils.GetRequestID(c),
+					"user not found in context")
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
 			}
 
@@ -175,10 +184,10 @@ func (mw *MiddlewareManager) OwnerOrAdminMiddleware() echo.MiddlewareFunc {
 			}
 
 			if user.UserID.String() != c.Param("user_id") {
-				mw.logger.Errorf("Error c.Get(user) RequestID: %s, UserID: %s, ERROR: %s,",
+				mw.logger.Errorf("Error: user not authorized RequestID: %s, UserID: %s, ERROR: %s",
 					utils.GetRequestID(c),
 					user.UserID.String(),
-					"invalid user ctx",
+					"user not authorized to access this resource",
 				)
 				return c.JSON(http.StatusForbidden, map[string]string{"error": "Forbidden"})
 			}

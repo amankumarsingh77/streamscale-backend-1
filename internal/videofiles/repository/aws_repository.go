@@ -3,12 +3,13 @@ package repository
 import (
 	"context"
 	"fmt"
-	"github.com/amankumarsingh77/cloud-video-encoder/internal/models"
-	"github.com/amankumarsingh77/cloud-video-encoder/internal/videofiles"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"log"
 	"regexp"
 	"time"
+
+	"github.com/amankumarsingh77/cloud-video-encoder/internal/models"
+	"github.com/amankumarsingh77/cloud-video-encoder/internal/videofiles"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 type awsRepository struct {
@@ -24,7 +25,7 @@ func NewAwsRepository(awsClient *s3.Client, preSignClient *s3.PresignClient) vid
 }
 
 func (a *awsRepository) GetPresignedURL(ctx context.Context, input *models.UploadInput) (string, error) {
-	pattern := `^.+\.(mp4|mkv|avi|mov|wmv|flv|webm|m4v|mpeg|mpg|3gp|ogv|vob|ts|mxf)$`
+	pattern := `.+(mp4|mkv|avi|mov|wmv|flv|webm|m4v|mpeg|mpg|3gp|ogv|vob|ts|mxf)$`
 	re := regexp.MustCompile(pattern)
 	if !re.MatchString(input.Name) {
 		return "", fmt.Errorf("invalid file format: %s", input.Name)

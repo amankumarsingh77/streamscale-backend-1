@@ -3,16 +3,21 @@ package utils
 import (
 	"context"
 	"fmt"
+	"net/http"
+
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/config"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/models"
 	"github.com/labstack/echo/v4"
-	"net/http"
 )
 
+// UserCtxKey is the type for the user context key
 type UserCtxKey struct{}
 
+// CtxUserKey is the singleton instance for user context
+var CtxUserKey = UserCtxKey{}
+
 func GetUserFromCtx(ctx context.Context) (*models.User, error) {
-	user, ok := ctx.Value(UserCtxKey{}).(*models.User)
+	user, ok := ctx.Value(CtxUserKey).(*models.User)
 	if !ok {
 		return nil, fmt.Errorf("user not found in context")
 	}

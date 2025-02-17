@@ -2,17 +2,19 @@ package server
 
 import (
 	"context"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/config"
 	"github.com/amankumarsingh77/cloud-video-encoder/pkg/logger"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/go-redis/redis/v8"
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
-	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
+	"github.com/labstack/echo/v4/middleware"
 )
 
 const (
@@ -48,6 +50,13 @@ func (s *Server) Run() error {
 	}
 	s.echo.Server.MaxHeaderBytes = maxHeaderBytes
 	s.echo.Server.ReadTimeout = time.Second * s.echo.Server.ReadTimeout
+	s.echo.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins:     []string{"http://localhost:5173", "http://localhost:3000"}, // Add your frontend URLs here
+		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
+		AllowHeaders:     []string{"Content-Type", "Authorization"},
+		AllowCredentials: true, // This is crucial for cookies
+		MaxAge:           300,  // Optional: cache preflight requests
+	}))
 	server := &http.Server{
 		Addr:         s.cfg.Server.Port,
 		ReadTimeout:  time.Second * s.echo.Server.ReadTimeout,

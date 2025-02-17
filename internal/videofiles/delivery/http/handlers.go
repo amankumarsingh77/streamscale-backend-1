@@ -1,12 +1,13 @@
 package http
 
 import (
+	"net/http"
+
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/models"
 	"github.com/amankumarsingh77/cloud-video-encoder/internal/videofiles"
 	"github.com/amankumarsingh77/cloud-video-encoder/pkg/utils"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
-	"net/http"
 )
 
 type videoHandler struct {
@@ -29,7 +30,7 @@ func (h *videoHandler) GetPresignUpload() echo.HandlerFunc {
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 		}
-		return c.JSON(http.StatusOK, presignUrl)
+		return c.JSON(http.StatusOK, map[string]string{"presignUrl": presignUrl})
 	}
 }
 
@@ -133,5 +134,21 @@ func (h *videoHandler) GetPlaybackInfo() echo.HandlerFunc {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 		}
 		return c.JSON(http.StatusOK, playbackInfo)
+	}
+}
+
+func (h *videoHandler) CreateJob() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		input := &models.VideoUploadInput{}
+		if err := c.Bind(input); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request payload"})
+		}
+
+		job, err := h.videoUC.CreateJob(c.Request().Context(), input)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+
+		return c.JSON(http.StatusOK, job)
 	}
 }

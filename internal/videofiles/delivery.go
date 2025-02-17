@@ -11,6 +11,7 @@ type Handler interface {
 	GetPlaybackInfo() echo.HandlerFunc
 	SearchVideos() echo.HandlerFunc
 	UpdateVideo() echo.HandlerFunc
+	CreateJob() echo.HandlerFunc
 
 	//GetVideoThumbnail() echo.HandlerFunc  // Coming soon ;)
 }

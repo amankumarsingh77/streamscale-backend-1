@@ -28,8 +28,9 @@ func (v *videoRepo) CreateVideo(ctx context.Context, videoFile *models.VideoFile
 		videoFile.UserID,
 		videoFile.FileName,
 		videoFile.FileSize,
-		0,
+		videoFile.Duration,
 		videoFile.S3Key,
+		videoFile.Status,
 		videoFile.S3Bucket,
 		videoFile.Format,
 	).StructScan(video); err != nil {

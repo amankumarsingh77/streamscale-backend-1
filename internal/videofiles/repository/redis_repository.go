@@ -51,7 +51,6 @@ func (v *videoRedisRepo) PeekJob(ctx context.Context, key string) (*models.Encod
 		if job.Status == models.JobStatusProcessing {
 			continue
 		}
-		log.Println(job.Status)
 
 		lockKey := "lock:" + job.JobID
 		locked, err := v.redisClient.SetNX(ctx, lockKey, 1, 10*time.Minute).Result()
@@ -160,4 +159,12 @@ func (v *videoRedisRepo) GetJobStatus(ctx context.Context, key string, jobID str
 	}
 
 	return models.JobStatus(status), nil
+}
+
+func (v *videoRedisRepo) GetRedisClient() *redis.Client {
+	return v.redisClient
+}
+
+func (v *videoRedisRepo) SubscribeToJobs(ctx context.Context, key string) *redis.PubSub {
+	return v.redisClient.Subscribe(ctx, key)
 }
